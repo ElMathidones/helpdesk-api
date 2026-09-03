@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.routes.users import router as users_router
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -10,6 +11,8 @@ app = FastAPI(
     description="API para gerenciamento de chamados de suporte técnico.",
     debug=settings.debug,
 )
+
+app.include_router(users_router)
 
 
 @app.get("/")
