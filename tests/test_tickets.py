@@ -501,3 +501,208 @@ def test_ticket_status_workflow(client, db):
     assert reopen_response.json() == {
         "detail": "Cannot change ticket status from closed to in_progress"
     }
+
+
+def test_create_ticket_with_unknown_category_returns_400(client):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    token = login_user(client, "cliente@example.com")
+
+    response = client.post(
+        "/tickets",
+        json={
+            "title": "Problema no computador",
+            "description": "O computador apresenta um problema durante o uso.",
+            "priority": "medium",
+            "category_id": 99999,
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Category not found"}
+
+
+def test_customer_cannot_update_ticket_status(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Problema de hardware",
+            "description": "O computador está apresentando falhas de hardware.",
+            "priority": "high",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    ticket_id = ticket_response.json()["id"]
+
+    response = client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "resolved",
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Insufficient permissions"}
+
+
+def test_assign_unknown_ticket_returns_400(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    token = login_user(client, "admin@example.com")
+
+    response = client.patch(
+        "/tickets/99999/assign",
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Ticket not found"}
+
+
+def test_invalid_ticket_status_transition_returns_400(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Computador com defeito",
+            "description": "O computador apresenta falhas durante a inicialização.",
+            "priority": "medium",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    ticket_id = ticket_response.json()["id"]
+
+    response = client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "closed",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Cannot change ticket status from open to closed"
+    }
