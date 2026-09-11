@@ -12,6 +12,10 @@ jobs:
   quality:
     runs-on: ubuntu-latest
 
+    env:
+      DATABASE_URL: sqlite://
+      JWT_SECRET_KEY: ci-test-secret-key
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
