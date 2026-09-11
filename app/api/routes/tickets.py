@@ -49,3 +49,31 @@ def list_tickets(
         return service.list_tickets_by_creator(current_user.id)
 
     return service.list_all_tickets()
+
+
+@router.get(
+    "/{ticket_id}",
+    response_model=TicketResponse,
+)
+def get_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TicketResponse:
+    service = TicketService(db)
+
+    try:
+        return service.get_ticket(
+            ticket_id=ticket_id,
+            current_user=current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc

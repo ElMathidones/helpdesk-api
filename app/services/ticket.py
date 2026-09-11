@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 
+from app.models.enums import UserRole
 from app.models.ticket import Ticket
+from app.models.user import User
 from app.repositories.category import CategoryRepository
 from app.repositories.ticket import TicketRepository
 from app.schemas.ticket import TicketCreate
@@ -40,3 +42,21 @@ class TicketService:
         creator_id: int,
     ) -> list[Ticket]:
         return self.ticket_repository.list_by_creator(creator_id)
+
+    def get_ticket(
+        self,
+        ticket_id: int,
+        current_user: User,
+    ) -> Ticket:
+        ticket = self.ticket_repository.get_by_id(ticket_id)
+
+        if ticket is None:
+            raise ValueError("Ticket not found")
+
+        if (
+            current_user.role == UserRole.CUSTOMER
+            and ticket.creator_id != current_user.id
+        ):
+            raise PermissionError("Insufficient permissions")
+
+        return ticket
