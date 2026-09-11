@@ -12,6 +12,9 @@ class CategoryRepository:
         statement = select(Category).where(Category.name == name)
         return self.db.scalar(statement)
 
+    def get_by_id(self, category_id: int) -> Category | None:
+        return self.db.get(Category, category_id)
+
     def create(
         self,
         *,
