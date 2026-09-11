@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -55,6 +57,21 @@ class TicketRepository:
     ) -> Ticket:
         ticket.assignee_id = assignee_id
         ticket.status = TicketStatus.IN_PROGRESS
+
+        self.db.commit()
+        self.db.refresh(ticket)
+
+        return ticket
+
+    def update_status(
+        self,
+        ticket: Ticket,
+        new_status: TicketStatus,
+    ) -> Ticket:
+        ticket.status = new_status
+
+        if new_status == TicketStatus.CLOSED:
+            ticket.closed_at = datetime.now(UTC)
 
         self.db.commit()
         self.db.refresh(ticket)

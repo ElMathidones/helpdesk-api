@@ -12,6 +12,10 @@ class TicketCreate(BaseModel):
     category_id: int = Field(gt=0)
 
 
+class TicketStatusUpdate(BaseModel):
+    status: TicketStatus
+
+
 class TicketResponse(BaseModel):
     id: int
     title: str

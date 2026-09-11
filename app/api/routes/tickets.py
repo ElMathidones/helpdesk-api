@@ -5,7 +5,11 @@ from app.dependencies.auth import get_current_user, require_roles
 from app.dependencies.database import get_db
 from app.models.enums import UserRole
 from app.models.user import User
-from app.schemas.ticket import TicketCreate, TicketResponse
+from app.schemas.ticket import (
+    TicketCreate,
+    TicketResponse,
+    TicketStatusUpdate,
+)
 from app.services.ticket import TicketService
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -99,6 +103,35 @@ def assign_ticket(
         return service.assign_ticket(
             ticket_id=ticket_id,
             assignee_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.patch(
+    "/{ticket_id}/status",
+    response_model=TicketResponse,
+)
+def update_ticket_status(
+    ticket_id: int,
+    data: TicketStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.TECHNICIAN,
+        )
+    ),
+) -> TicketResponse:
+    service = TicketService(db)
+
+    try:
+        return service.update_ticket_status(
+            ticket_id=ticket_id,
+            new_status=data.status,
         )
     except ValueError as exc:
         raise HTTPException(

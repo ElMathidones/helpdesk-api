@@ -85,3 +85,46 @@ class TicketService:
             ticket=ticket,
             assignee_id=assignee_id,
         )
+
+    def update_ticket_status(
+        self,
+        ticket_id: int,
+        new_status: TicketStatus,
+    ) -> Ticket:
+        ticket = self.ticket_repository.get_by_id(ticket_id)
+
+        if ticket is None:
+            raise ValueError("Ticket not found")
+
+        allowed_transitions = {
+            TicketStatus.OPEN: {
+                TicketStatus.UNDER_REVIEW,
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.CANCELED,
+            },
+            TicketStatus.UNDER_REVIEW: {
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.CANCELED,
+            },
+            TicketStatus.IN_PROGRESS: {
+                TicketStatus.RESOLVED,
+                TicketStatus.CANCELED,
+            },
+            TicketStatus.RESOLVED: {
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.CLOSED,
+            },
+            TicketStatus.CLOSED: set(),
+            TicketStatus.CANCELED: set(),
+        }
+
+        if new_status not in allowed_transitions[ticket.status]:
+            raise ValueError(
+                f"Cannot change ticket status from "
+                f"{ticket.status.value} to {new_status.value}"
+            )
+
+        return self.ticket_repository.update_status(
+            ticket=ticket,
+            new_status=new_status,
+        )
