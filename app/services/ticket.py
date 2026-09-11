@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.models.enums import UserRole
+from app.models.enums import TicketStatus, UserRole
 from app.models.ticket import Ticket
 from app.models.user import User
 from app.repositories.category import CategoryRepository
@@ -60,3 +60,28 @@ class TicketService:
             raise PermissionError("Insufficient permissions")
 
         return ticket
+
+    def assign_ticket(
+        self,
+        ticket_id: int,
+        assignee_id: int,
+    ) -> Ticket:
+        ticket = self.ticket_repository.get_by_id(ticket_id)
+
+        if ticket is None:
+            raise ValueError("Ticket not found")
+
+        if ticket.assignee_id is not None:
+            raise ValueError("Ticket is already assigned")
+
+        if ticket.status in {
+            TicketStatus.RESOLVED,
+            TicketStatus.CLOSED,
+            TicketStatus.CANCELED,
+        }:
+            raise ValueError("Ticket cannot be assigned in its current status")
+
+        return self.ticket_repository.assign(
+            ticket=ticket,
+            assignee_id=assignee_id,
+        )

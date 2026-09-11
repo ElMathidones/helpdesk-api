@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.enums import TicketPriority
+from app.models.enums import TicketPriority, TicketStatus
 from app.models.ticket import Ticket
 
 
@@ -47,3 +47,16 @@ class TicketRepository:
         )
 
         return list(self.db.scalars(statement).all())
+
+    def assign(
+        self,
+        ticket: Ticket,
+        assignee_id: int,
+    ) -> Ticket:
+        ticket.assignee_id = assignee_id
+        ticket.status = TicketStatus.IN_PROGRESS
+
+        self.db.commit()
+        self.db.refresh(ticket)
+
+        return ticket
