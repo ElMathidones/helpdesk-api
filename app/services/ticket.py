@@ -31,3 +31,12 @@ class TicketService:
             category_id=data.category_id,
             creator_id=creator_id,
         )
+
+    def list_all_tickets(self) -> list[Ticket]:
+        return self.ticket_repository.list_all()
+
+    def list_tickets_by_creator(
+        self,
+        creator_id: int,
+    ) -> list[Ticket]:
+        return self.ticket_repository.list_by_creator(creator_id)
