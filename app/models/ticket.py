@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import TicketPriority, TicketStatus
@@ -74,4 +74,19 @@ class Ticket(Base):
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    category = relationship(
+        "Category",
+        foreign_keys=[category_id],
+    )
+
+    creator = relationship(
+        "User",
+        foreign_keys=[creator_id],
+    )
+
+    assignee = relationship(
+        "User",
+        foreign_keys=[assignee_id],
     )
