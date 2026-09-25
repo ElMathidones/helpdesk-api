@@ -96,6 +96,7 @@ def test_customer_can_create_and_list_comments(client, db):
     assert comment_data["author_id"] == (
         db.query(User).filter(User.email == "cliente@example.com").first().id
     )
+    assert comment_data["author"]["name"] == "Cliente Teste"
     assert comment_data["content"] == "Olá! Estou verificando o seu chamado."
     assert comment_data["created_at"] is not None
 
@@ -113,6 +114,7 @@ def test_customer_can_create_and_list_comments(client, db):
     assert len(comments_data) == 1
     assert comments_data[0]["id"] == comment_data["id"]
     assert comments_data[0]["content"] == "Olá! Estou verificando o seu chamado."
+    assert comments_data[0]["author"]["name"] == "Cliente Teste"
 
 
 def test_customer_cannot_access_comments_from_another_customer(
