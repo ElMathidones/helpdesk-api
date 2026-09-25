@@ -6,6 +6,7 @@ from app.api.routes.categories import router as categories_router
 from app.api.routes.comments import router as comments_router
 from app.api.routes.tickets import router as tickets_router
 from app.api.routes.users import router as users_router
+from app.api.routes.websocket import router as websocket_router
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -32,6 +33,7 @@ app.include_router(users_router)
 app.include_router(categories_router)
 app.include_router(tickets_router)
 app.include_router(comments_router)
+app.include_router(websocket_router)
 
 
 @app.get("/")

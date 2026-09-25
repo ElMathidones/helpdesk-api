@@ -6,6 +6,7 @@ from app.dependencies.database import get_db
 from app.models.user import User
 from app.schemas.comment import CommentCreate, CommentResponse
 from app.services.comment import CommentService
+from app.services.websocket import manager
 
 router = APIRouter(prefix="/tickets", tags=["comments"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/tickets", tags=["comments"])
     response_model=CommentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_comment(
+async def create_comment(
     ticket_id: int,
     data: CommentCreate,
     db: Session = Depends(get_db),
@@ -24,11 +25,21 @@ def create_comment(
     service = CommentService(db)
 
     try:
-        return service.create_comment(
+        comment = service.create_comment(
             ticket_id=ticket_id,
             author_id=current_user.id,
             data=data,
         )
+
+        await manager.broadcast(
+            ticket_id=ticket_id,
+            message={
+                "type": "comment_created",
+                "comment": comment.model_dump(mode="json"),
+            },
+        )
+
+        return comment
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
