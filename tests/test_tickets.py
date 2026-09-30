@@ -167,6 +167,23 @@ def test_customer_can_create_ticket(client, db):
     assert data["status"] == "open"
     assert data["assignee_id"] is None
 
+    history_response = client.get(
+        f"/tickets/{data['id']}/history",
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert history_response.status_code == 200
+
+    history = history_response.json()
+
+    assert len(history) == 1
+    assert history[0]["event_type"] == "ticket_created"
+    assert history[0]["old_value"] is None
+    assert history[0]["new_value"] is None
+    assert history[0]["user"]["name"] == "Cliente Teste"
+
 
 def test_customer_cannot_assign_ticket(client, db):
     client.post(
@@ -308,6 +325,31 @@ def test_admin_can_assign_ticket(client, db):
 
     assert data["assignee_id"] == admin.id
     assert data["status"] == TicketStatus.IN_PROGRESS
+
+    history_response = client.get(
+        f"/tickets/{ticket_id}/history",
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert history_response.status_code == 200
+
+    history = history_response.json()
+
+    assert len(history) == 3
+
+    assert history[0]["event_type"] == "ticket_created"
+
+    assert history[1]["event_type"] == "assignee_changed"
+    assert history[1]["old_value"] is None
+    assert history[1]["new_value"] == str(admin.id)
+    assert history[1]["user"]["name"] == "Admin Teste"
+
+    assert history[2]["event_type"] == "status_changed"
+    assert history[2]["old_value"] == "open"
+    assert history[2]["new_value"] == "in_progress"
+    assert history[2]["user"]["name"] == "Admin Teste"
 
 
 def test_customer_cannot_view_another_customers_ticket(client, db):
@@ -486,6 +528,29 @@ def test_ticket_status_workflow(client, db):
     assert closed_response.status_code == 200
     assert closed_response.json()["status"] == "closed"
     assert closed_response.json()["closed_at"] is not None
+
+    history_response = client.get(
+        f"/tickets/{ticket_id}/history",
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert history_response.status_code == 200
+
+    history = history_response.json()
+
+    assert len(history) == 5
+
+    assert history[3]["event_type"] == "status_changed"
+    assert history[3]["old_value"] == "in_progress"
+    assert history[3]["new_value"] == "resolved"
+    assert history[3]["user"]["name"] == "Admin Teste"
+
+    assert history[4]["event_type"] == "status_changed"
+    assert history[4]["old_value"] == "resolved"
+    assert history[4]["new_value"] == "closed"
+    assert history[4]["user"]["name"] == "Admin Teste"
 
     reopen_response = client.patch(
         f"/tickets/{ticket_id}/status",

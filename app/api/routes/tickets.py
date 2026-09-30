@@ -10,6 +10,7 @@ from app.schemas.ticket import (
     TicketResponse,
     TicketStatusUpdate,
 )
+from app.schemas.ticket_history import TicketHistoryResponse
 from app.services.ticket import TicketService
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -53,6 +54,37 @@ def list_tickets(
         return service.list_tickets_by_creator(current_user.id)
 
     return service.list_all_tickets()
+
+
+@router.get(
+    "/{ticket_id}/history",
+    response_model=list[TicketHistoryResponse],
+)
+def list_ticket_history(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[TicketHistoryResponse]:
+    service = TicketService(db)
+
+    try:
+        service.get_ticket(
+            ticket_id=ticket_id,
+            current_user=current_user,
+        )
+
+        return service.history_service.list_by_ticket(ticket_id)
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get(
@@ -132,6 +164,7 @@ def update_ticket_status(
         return service.update_ticket_status(
             ticket_id=ticket_id,
             new_status=data.status,
+            current_user=current_user,
         )
     except ValueError as exc:
         raise HTTPException(

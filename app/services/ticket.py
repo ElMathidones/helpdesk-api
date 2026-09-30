@@ -6,12 +6,15 @@ from app.models.user import User
 from app.repositories.category import CategoryRepository
 from app.repositories.ticket import TicketRepository
 from app.schemas.ticket import TicketCreate
+from app.services.ticket_history import TicketHistoryService
 
 
 class TicketService:
     def __init__(self, db: Session) -> None:
+        self.db = db
         self.ticket_repository = TicketRepository(db)
         self.category_repository = CategoryRepository(db)
+        self.history_service = TicketHistoryService(db)
 
     def create_ticket(
         self,
@@ -26,13 +29,24 @@ class TicketService:
         if not category.is_active:
             raise ValueError("Category is inactive")
 
-        return self.ticket_repository.create(
+        ticket = self.ticket_repository.create(
             title=data.title,
             description=data.description,
             priority=data.priority,
             category_id=data.category_id,
             creator_id=creator_id,
         )
+
+        self.history_service.create_event(
+            ticket_id=ticket.id,
+            user_id=creator_id,
+            event_type="ticket_created",
+        )
+
+        self.db.commit()
+        self.db.refresh(ticket)
+
+        return ticket
 
     def list_all_tickets(self) -> list[Ticket]:
         return self.ticket_repository.list_all()
@@ -81,15 +95,40 @@ class TicketService:
         }:
             raise ValueError("Ticket cannot be assigned in its current status")
 
-        return self.ticket_repository.assign(
+        old_status = ticket.status
+
+        ticket = self.ticket_repository.assign(
             ticket=ticket,
             assignee_id=assignee_id,
         )
+
+        self.history_service.create_event(
+            ticket_id=ticket.id,
+            user_id=assignee_id,
+            event_type="assignee_changed",
+            old_value=None,
+            new_value=str(assignee_id),
+        )
+
+        if old_status != ticket.status:
+            self.history_service.create_event(
+                ticket_id=ticket.id,
+                user_id=assignee_id,
+                event_type="status_changed",
+                old_value=old_status.value,
+                new_value=ticket.status.value,
+            )
+
+        self.db.commit()
+        self.db.refresh(ticket)
+
+        return ticket
 
     def update_ticket_status(
         self,
         ticket_id: int,
         new_status: TicketStatus,
+        current_user: User,
     ) -> Ticket:
         ticket = self.ticket_repository.get_by_id(ticket_id)
 
@@ -124,7 +163,22 @@ class TicketService:
                 f"{ticket.status.value} to {new_status.value}"
             )
 
-        return self.ticket_repository.update_status(
+        old_status = ticket.status
+
+        ticket = self.ticket_repository.update_status(
             ticket=ticket,
             new_status=new_status,
         )
+
+        self.history_service.create_event(
+            ticket_id=ticket.id,
+            user_id=current_user.id,
+            event_type="status_changed",
+            old_value=old_status.value,
+            new_value=new_status.value,
+        )
+
+        self.db.commit()
+        self.db.refresh(ticket)
+
+        return ticket

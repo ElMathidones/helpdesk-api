@@ -29,7 +29,7 @@ class TicketRepository:
         )
 
         self.db.add(ticket)
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(ticket)
 
         return ticket
@@ -58,7 +58,7 @@ class TicketRepository:
         ticket.assignee_id = assignee_id
         ticket.status = TicketStatus.IN_PROGRESS
 
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(ticket)
 
         return ticket
