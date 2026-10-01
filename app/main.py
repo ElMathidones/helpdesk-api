@@ -4,9 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.categories import router as categories_router
 from app.api.routes.comments import router as comments_router
+from app.api.routes.reports import router as reports_router
 from app.api.routes.tickets import router as tickets_router
 from app.api.routes.users import router as users_router
-from app.api.routes.reports import router as reports_router
 from app.api.routes.websocket import router as websocket_router
 from app.core.config import get_settings
 
