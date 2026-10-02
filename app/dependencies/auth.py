@@ -30,6 +30,9 @@ def get_current_user(
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
+            options={
+                "require": ["exp", "sub"],
+            },
         )
 
         subject = payload.get("sub")
@@ -67,6 +70,9 @@ def get_user_from_token(
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
+            options={
+                "require": ["exp", "sub"],
+            },
         )
 
         subject = payload.get("sub")

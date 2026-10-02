@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.categories import router as categories_router
@@ -24,10 +25,36 @@ app.add_middleware(
     allow_origins=[
         origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
     ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+    ],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(
+    request: Request,
+    call_next,
+) -> Response:
+    response = await call_next(request)
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+
+    return response
+
 
 app.include_router(auth_router)
 app.include_router(users_router)

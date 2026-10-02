@@ -112,7 +112,7 @@ DEBUG=true
 
 DATABASE_URL=postgresql+psycopg://helpdesk:helpdesk@localhost:5432/helpdesk
 
-JWT_SECRET_KEY=change-this-secret-key
+JWT_SECRET_KEY=replace-with-a-long-random-secret
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```

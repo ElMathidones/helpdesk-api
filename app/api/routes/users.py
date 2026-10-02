@@ -15,7 +15,11 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
-from app.services.user import AVATAR_DIRECTORY, UserService
+from app.services.user import (
+    AVATAR_DIRECTORY,
+    MAX_AVATAR_SIZE,
+    UserService,
+)
 
 router = APIRouter(
     prefix="/users",
@@ -79,7 +83,7 @@ async def upload_current_user_avatar(
 ) -> UserResponse:
     service = UserService(db)
 
-    content = await avatar.read()
+    content = await avatar.read(MAX_AVATAR_SIZE + 1)
 
     try:
         return service.update_avatar(

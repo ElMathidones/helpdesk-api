@@ -241,3 +241,39 @@ def test_avatar_rejects_file_larger_than_2_mb(
     }
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_avatar_rejects_content_that_does_not_match_file_type(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    create_test_user(client)
+
+    token = login_user(client, "mathias@example.com")
+
+    monkeypatch.setattr(
+        "app.services.user.AVATAR_DIRECTORY",
+        tmp_path,
+    )
+
+    response = client.post(
+        "/users/me/avatar",
+        files={
+            "avatar": (
+                "avatar.png",
+                b"this-is-not-a-real-png",
+                "image/png",
+            ),
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Avatar content does not match its file type",
+    }
+
+    assert list(tmp_path.iterdir()) == []

@@ -8,7 +8,7 @@ from app.models.user import User
 from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate, UserUpdate
 
-AVATAR_DIRECTORY = Path("uploads/avatars")
+AVATAR_DIRECTORY = Path(__file__).resolve().parents[2] / "uploads" / "avatars"
 
 ALLOWED_AVATAR_TYPES = {
     "image/jpeg": ".jpg",
@@ -17,6 +17,24 @@ ALLOWED_AVATAR_TYPES = {
 }
 
 MAX_AVATAR_SIZE = 2 * 1024 * 1024
+
+
+def is_valid_avatar_content(
+    content: bytes,
+    content_type: str,
+) -> bool:
+    if content_type == "image/jpeg":
+        return content.startswith(b"\xff\xd8\xff")
+
+    if content_type == "image/png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+
+    if content_type == "image/webp":
+        return (
+            len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+        )
+
+    return False
 
 
 class UserService:
@@ -62,6 +80,9 @@ class UserService:
 
         if not content:
             raise ValueError("Avatar file is empty")
+
+        if not is_valid_avatar_content(content, content_type):
+            raise ValueError("Avatar content does not match its file type")
 
         AVATAR_DIRECTORY.mkdir(
             parents=True,
