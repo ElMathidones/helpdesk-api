@@ -30,3 +30,29 @@ class UserRepository:
         self.db.refresh(user)
 
         return user
+
+    def update(
+        self,
+        user: User,
+        *,
+        name: str,
+    ) -> User:
+        user.name = name
+
+        self.db.commit()
+        self.db.refresh(user)
+
+        return user
+
+    def update_avatar(
+        self,
+        user: User,
+        *,
+        avatar_filename: str | None,
+    ) -> User:
+        user.avatar_filename = avatar_filename
+
+        self.db.commit()
+        self.db.refresh(user)
+
+        return user

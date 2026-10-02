@@ -23,7 +23,7 @@ class TicketService:
     ) -> Ticket:
         category = self.category_repository.get_by_id(data.category_id)
 
-        if category is None:
+        if category is None or not category.is_active:
             raise ValueError("Category not found")
 
         if not category.is_active:

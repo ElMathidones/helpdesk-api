@@ -9,11 +9,16 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class UserUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+
 class UserResponse(BaseModel):
     id: int
     name: str
     email: EmailStr
     role: UserRole
     is_active: bool
+    avatar_filename: str | None
 
     model_config = ConfigDict(from_attributes=True)

@@ -16,5 +16,14 @@ class CategoryResponse(BaseModel):
     name: str
     description: str | None
     is_active: bool
+    sort_order: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CategoryOrderUpdate(BaseModel):
+    category_ids: list[int] = Field(min_length=1)
+
+
+class CategoryStatusUpdate(BaseModel):
+    is_active: bool
