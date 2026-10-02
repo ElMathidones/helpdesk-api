@@ -32,6 +32,20 @@ class CategoryRepository:
 
         return category
 
+    def update(
+        self,
+        category: Category,
+        *,
+        data: dict[str, object],
+    ) -> Category:
+        for field, value in data.items():
+            setattr(category, field, value)
+
+        self.db.commit()
+        self.db.refresh(category)
+
+        return category
+
     def list_all(self) -> list[Category]:
         statement = select(Category).order_by(Category.name)
         return list(self.db.scalars(statement).all())
