@@ -771,3 +771,172 @@ def test_invalid_ticket_status_transition_returns_400(client, db):
     assert response.json() == {
         "detail": "Cannot change ticket status from open to closed"
     }
+
+
+def test_cannot_create_ticket_with_inactive_category(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert category_response.status_code == 201
+
+    category_id = category_response.json()["id"]
+
+    deactivate_response = client.patch(
+        f"/categories/{category_id}/status",
+        json={
+            "is_active": False,
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert deactivate_response.status_code == 200
+    assert deactivate_response.json()["is_active"] is False
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    response = client.post(
+        "/tickets",
+        json={
+            "title": "Problema de hardware",
+            "description": "O computador apresenta falha de hardware.",
+            "priority": "high",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Category is inactive",
+    }
+
+
+def test_existing_ticket_remains_accessible_after_category_is_deactivated(
+    client,
+    db,
+):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert category_response.status_code == 201
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Computador não liga",
+            "description": "O computador não apresenta nenhum sinal.",
+            "priority": "high",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert ticket_response.status_code == 201
+
+    ticket_id = ticket_response.json()["id"]
+
+    deactivate_response = client.patch(
+        f"/categories/{category_id}/status",
+        json={
+            "is_active": False,
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert deactivate_response.status_code == 200
+
+    response = client.get(
+        f"/tickets/{ticket_id}",
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["id"] == ticket_id
+    assert data["category_id"] == category_id
