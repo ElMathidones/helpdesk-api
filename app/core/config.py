@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    resend_api_key: str | None = None
+    email_from: str = "Help Desk <onboarding@resend.dev>"
 
     model_config = SettingsConfigDict(
         env_file=".env",

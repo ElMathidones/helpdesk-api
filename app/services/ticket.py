@@ -23,8 +23,6 @@ class TicketService:
     ) -> Ticket:
         category = self.category_repository.get_by_id(data.category_id)
 
-        category = self.category_repository.get_by_id(data.category_id)
-
         if category is None:
             raise ValueError("Category not found")
 
@@ -58,6 +56,21 @@ class TicketService:
         creator_id: int,
     ) -> list[Ticket]:
         return self.ticket_repository.list_by_creator(creator_id)
+
+    def get_ticket_by_creator_number(
+        self,
+        creator_id: int,
+        creator_ticket_number: int,
+    ) -> Ticket:
+        ticket = self.ticket_repository.get_by_creator_ticket_number(
+            creator_id=creator_id,
+            creator_ticket_number=creator_ticket_number,
+        )
+
+        if ticket is None:
+            raise ValueError("Ticket not found")
+
+        return ticket
 
     def get_ticket(
         self,
@@ -184,3 +197,14 @@ class TicketService:
         self.db.refresh(ticket)
 
         return ticket
+
+    def delete_ticket(
+        self,
+        ticket_id: int,
+    ) -> None:
+        ticket = self.ticket_repository.get_by_id(ticket_id)
+
+        if ticket is None:
+            raise LookupError("Ticket not found")
+
+        self.ticket_repository.delete(ticket)

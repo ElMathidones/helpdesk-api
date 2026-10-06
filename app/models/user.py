@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +43,13 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
+        nullable=False,
+    )
+
+    next_ticket_number: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default="1",
         nullable=False,
     )
 

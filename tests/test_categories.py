@@ -1,3 +1,4 @@
+from app.models.category import Category
 from app.models.enums import UserRole
 from app.models.user import User
 
@@ -771,3 +772,175 @@ def test_customer_cannot_reorder_categories(client):
     assert response.json() == {
         "detail": "Insufficient permissions",
     }
+
+
+def test_admin_can_delete_unused_category(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    token = login_user(client, "admin@example.com")
+
+    create_response = client.post(
+        "/categories",
+        json={
+            "name": "Categoria Temporária",
+            "description": "Categoria que ainda não foi utilizada.",
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    assert create_response.status_code == 201
+
+    category_id = create_response.json()["id"]
+
+    response = client.delete(
+        f"/categories/{category_id}",
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    assert response.status_code == 204
+    assert db.get(Category, category_id) is None
+
+
+def test_admin_cannot_delete_category_used_by_ticket(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Problema de hardware",
+            "description": "Chamado que utiliza esta categoria.",
+            "priority": "medium",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert ticket_response.status_code == 201
+
+    response = client.delete(
+        f"/categories/{category_id}",
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Category cannot be deleted because it is used by tickets"
+    }
+
+    assert db.get(Category, category_id) is not None
+
+
+def test_customer_cannot_delete_category(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Categoria Protegida",
+            "description": None,
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    response = client.delete(
+        f"/categories/{category_id}",
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert response.status_code == 403
+    assert db.get(Category, category_id) is not None

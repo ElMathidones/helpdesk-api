@@ -84,3 +84,17 @@ class CategoryService:
             category,
             is_active=data.is_active,
         )
+
+    def delete_category(
+        self,
+        category_id: int,
+    ) -> None:
+        category = self.repository.get_by_id(category_id)
+
+        if category is None:
+            raise LookupError("Category not found")
+
+        if self.repository.has_tickets(category_id):
+            raise ValueError("Category cannot be deleted because it is used by tickets")
+
+        self.repository.delete(category)

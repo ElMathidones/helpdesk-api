@@ -130,6 +130,7 @@ def test_report_summary_filters_tickets_by_date(client, db):
         priority="high",
         category_id=category.id,
         creator_id=user_id,
+        creator_ticket_number=1,
     )
     db.add(ticket)
     db.commit()
@@ -183,6 +184,7 @@ def test_report_timeline_groups_tickets_by_date(client, db):
         priority="medium",
         category_id=category.id,
         creator_id=user_id,
+        creator_ticket_number=1,
         created_at=datetime(2026, 9, 15, 8, 30, tzinfo=UTC),
     )
 
@@ -192,6 +194,7 @@ def test_report_timeline_groups_tickets_by_date(client, db):
         priority="high",
         category_id=category.id,
         creator_id=user_id,
+        creator_ticket_number=2,
         created_at=datetime(2026, 9, 15, 16, 45, tzinfo=UTC),
     )
 
@@ -244,6 +247,7 @@ def test_report_timeline_filters_by_date_range(client, db):
             priority="medium",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=1,
             created_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
         ),
         Ticket(
@@ -252,6 +256,7 @@ def test_report_timeline_filters_by_date_range(client, db):
             priority="high",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=2,
             created_at=datetime(2026, 9, 15, 10, 0, tzinfo=UTC),
         ),
         Ticket(
@@ -260,6 +265,7 @@ def test_report_timeline_filters_by_date_range(client, db):
             priority="low",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=3,
             created_at=datetime(2026, 9, 18, 10, 0, tzinfo=UTC),
         ),
     ]
@@ -323,6 +329,7 @@ def test_report_priority_distribution_groups_tickets_by_priority(client, db):
             priority="low",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=1,
         ),
         Ticket(
             title="Chamado alto 1",
@@ -330,6 +337,7 @@ def test_report_priority_distribution_groups_tickets_by_priority(client, db):
             priority="high",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=2,
         ),
         Ticket(
             title="Chamado alto 2",
@@ -337,6 +345,7 @@ def test_report_priority_distribution_groups_tickets_by_priority(client, db):
             priority="high",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=3,
         ),
     ]
 
@@ -393,6 +402,7 @@ def test_report_priority_distribution_filters_by_date_range(client, db):
             priority="critical",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=1,
             created_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
         ),
         Ticket(
@@ -401,6 +411,7 @@ def test_report_priority_distribution_filters_by_date_range(client, db):
             priority="high",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=2,
             created_at=datetime(2026, 9, 15, 10, 0, tzinfo=UTC),
         ),
     ]
@@ -470,6 +481,7 @@ def test_report_category_distribution_groups_tickets_by_category(client, db):
             priority="medium",
             category_id=hardware.id,
             creator_id=user_id,
+            creator_ticket_number=1,
         ),
         Ticket(
             title="Problema de hardware 2",
@@ -477,6 +489,7 @@ def test_report_category_distribution_groups_tickets_by_category(client, db):
             priority="high",
             category_id=hardware.id,
             creator_id=user_id,
+            creator_ticket_number=2,
         ),
         Ticket(
             title="Problema de rede",
@@ -484,6 +497,7 @@ def test_report_category_distribution_groups_tickets_by_category(client, db):
             priority="medium",
             category_id=network.id,
             creator_id=user_id,
+            creator_ticket_number=3,
         ),
     ]
 
@@ -547,6 +561,7 @@ def test_report_category_distribution_filters_by_date_range(client, db):
             priority="medium",
             category_id=network.id,
             creator_id=user_id,
+            creator_ticket_number=1,
             created_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
         ),
         Ticket(
@@ -555,6 +570,7 @@ def test_report_category_distribution_filters_by_date_range(client, db):
             priority="high",
             category_id=hardware.id,
             creator_id=user_id,
+            creator_ticket_number=2,
             created_at=datetime(2026, 9, 15, 10, 0, tzinfo=UTC),
         ),
     ]
@@ -620,6 +636,7 @@ def test_report_status_distribution_groups_tickets_by_status(client, db):
             status="open",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=1,
         ),
         Ticket(
             title="Chamado resolvido 1",
@@ -628,6 +645,7 @@ def test_report_status_distribution_groups_tickets_by_status(client, db):
             status="resolved",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=2,
         ),
         Ticket(
             title="Chamado resolvido 2",
@@ -636,6 +654,7 @@ def test_report_status_distribution_groups_tickets_by_status(client, db):
             status="resolved",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=3,
         ),
     ]
 
@@ -694,6 +713,7 @@ def test_report_status_distribution_filters_by_date_range(client, db):
             status="closed",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=1,
             created_at=datetime(2026, 9, 14, 10, 0, tzinfo=UTC),
         ),
         Ticket(
@@ -703,6 +723,7 @@ def test_report_status_distribution_filters_by_date_range(client, db):
             status="resolved",
             category_id=category.id,
             creator_id=user_id,
+            creator_ticket_number=2,
             created_at=datetime(2026, 9, 15, 10, 0, tzinfo=UTC),
         ),
     ]

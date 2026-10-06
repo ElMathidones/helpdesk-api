@@ -1,4 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.dependencies.auth import get_current_user, require_roles
@@ -11,6 +17,7 @@ from app.schemas.ticket import (
     TicketStatusUpdate,
 )
 from app.schemas.ticket_history import TicketHistoryResponse
+from app.services.email import EmailService
 from app.services.ticket import TicketService
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -23,13 +30,14 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 )
 def create_ticket(
     data: TicketCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> TicketResponse:
     service = TicketService(db)
 
     try:
-        return service.create_ticket(
+        ticket = service.create_ticket(
             data=data,
             creator_id=current_user.id,
         )
@@ -38,6 +46,20 @@ def create_ticket(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+    if data.send_email_copy:
+        background_tasks.add_task(
+            EmailService().send_ticket_created_copy,
+            recipient_email=current_user.email,
+            recipient_name=current_user.name,
+            ticket_number=ticket.creator_ticket_number,
+            title=ticket.title,
+            description=ticket.description,
+            priority=data.priority.value,
+            category_name=ticket.category.name,
+        )
+
+    return ticket
 
 
 @router.get(
@@ -54,6 +76,29 @@ def list_tickets(
         return service.list_tickets_by_creator(current_user.id)
 
     return service.list_all_tickets()
+
+
+@router.get(
+    "/my/{creator_ticket_number}",
+    response_model=TicketResponse,
+)
+def get_my_ticket(
+    creator_ticket_number: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TicketResponse:
+    service = TicketService(db)
+
+    try:
+        return service.get_ticket_by_creator_number(
+            creator_id=current_user.id,
+            creator_ticket_number=creator_ticket_number,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get(
@@ -121,6 +166,7 @@ def get_ticket(
 )
 def assign_ticket(
     ticket_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(
         require_roles(
@@ -132,7 +178,7 @@ def assign_ticket(
     service = TicketService(db)
 
     try:
-        return service.assign_ticket(
+        ticket = service.assign_ticket(
             ticket_id=ticket_id,
             assignee_id=current_user.id,
         )
@@ -141,6 +187,19 @@ def assign_ticket(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+    background_tasks.add_task(
+        EmailService().send_ticket_assigned_notification,
+        recipient_email=current_user.email,
+        recipient_name=current_user.name,
+        ticket_id=ticket.id,
+        title=ticket.title,
+        priority=ticket.priority.value,
+        category_name=ticket.category.name,
+        customer_name=ticket.creator.name,
+    )
+
+    return ticket
 
 
 @router.patch(
@@ -169,5 +228,25 @@ def update_ticket_status(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.delete(
+    "/{ticket_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
+) -> None:
+    service = TicketService(db)
+
+    try:
+        service.delete_ticket(ticket_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc

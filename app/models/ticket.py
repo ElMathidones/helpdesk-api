@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +18,13 @@ from app.models.enums import TicketPriority, TicketStatus
 
 class Ticket(Base):
     __tablename__ = "tickets"
+    __table_args__ = (
+        UniqueConstraint(
+            "creator_id",
+            "creator_ticket_number",
+            name="uq_tickets_creator_ticket_number",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -50,6 +65,11 @@ class Ticket(Base):
 
     creator_id: Mapped[int] = mapped_column(
         ForeignKey("users.id"),
+        nullable=False,
+    )
+
+    creator_ticket_number: Mapped[int] = mapped_column(
+        Integer,
         nullable=False,
     )
 

@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.category import Category
+from app.models.ticket import Ticket
 
 
 class CategoryRepository:
@@ -84,3 +85,16 @@ class CategoryRepository:
         self.db.refresh(category)
 
         return category
+
+    def has_tickets(self, category_id: int) -> bool:
+        statement = (
+            select(func.count())
+            .select_from(Ticket)
+            .where(Ticket.category_id == category_id)
+        )
+
+        return bool(self.db.scalar(statement))
+
+    def delete(self, category: Category) -> None:
+        self.db.delete(category)
+        self.db.commit()

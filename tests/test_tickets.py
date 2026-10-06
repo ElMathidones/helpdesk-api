@@ -1,4 +1,7 @@
+from app.models.comment import Comment
 from app.models.enums import TicketStatus, UserRole
+from app.models.ticket import Ticket
+from app.models.ticket_history import TicketHistory
 from app.models.user import User
 
 
@@ -350,6 +353,132 @@ def test_admin_can_assign_ticket(client, db):
     assert history[2]["old_value"] == "open"
     assert history[2]["new_value"] == "in_progress"
     assert history[2]["user"]["name"] == "Admin Teste"
+
+
+def test_ticket_assignment_email_is_sent_to_assignee(
+    client,
+    db,
+    monkeypatch,
+):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Técnico Teste",
+            "email": "tecnico@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    technician = db.query(User).filter(User.email == "tecnico@example.com").first()
+
+    assert admin is not None
+    assert technician is not None
+
+    admin.role = UserRole.ADMIN
+    technician.role = UserRole.TECHNICIAN
+    db.commit()
+
+    admin_token = login_user(
+        client,
+        "admin@example.com",
+    )
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert category_response.status_code == 201
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(
+        client,
+        "cliente@example.com",
+    )
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Computador não liga",
+            "description": ("O computador não apresenta nenhum sinal."),
+            "priority": "high",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert ticket_response.status_code == 201
+
+    ticket = ticket_response.json()
+
+    sent_emails = []
+
+    def fake_send_ticket_assigned_notification(
+        self,
+        **kwargs,
+    ):
+        sent_emails.append(kwargs)
+
+    monkeypatch.setattr(
+        ("app.api.routes.tickets.EmailService." "send_ticket_assigned_notification"),
+        fake_send_ticket_assigned_notification,
+    )
+
+    technician_token = login_user(
+        client,
+        "tecnico@example.com",
+    )
+
+    response = client.patch(
+        f"/tickets/{ticket['id']}/assign",
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["assignee_id"] == technician.id
+
+    assert len(sent_emails) == 1
+
+    email_data = sent_emails[0]
+
+    assert email_data["recipient_email"] == "tecnico@example.com"
+    assert email_data["recipient_name"] == "Técnico Teste"
+    assert email_data["ticket_id"] == ticket["id"]
+    assert email_data["title"] == "Computador não liga"
+    assert email_data["priority"] == "high"
+    assert email_data["category_name"] == "Hardware"
+    assert email_data["customer_name"] == "Cliente Teste"
 
 
 def test_customer_cannot_view_another_customers_ticket(client, db):
@@ -940,3 +1069,464 @@ def test_existing_ticket_remains_accessible_after_category_is_deactivated(
 
     assert data["id"] == ticket_id
     assert data["category_id"] == category_id
+
+
+def test_ticket_email_copy_is_sent_when_requested(client, db, monkeypatch):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert category_response.status_code == 201
+
+    category_id = category_response.json()["id"]
+
+    sent_emails = []
+
+    def fake_send_ticket_created_copy(self, **kwargs):
+        sent_emails.append(kwargs)
+
+    monkeypatch.setattr(
+        "app.api.routes.tickets.EmailService.send_ticket_created_copy",
+        fake_send_ticket_created_copy,
+    )
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    response = client.post(
+        "/tickets",
+        json={
+            "title": "Computador não liga",
+            "description": "O computador não apresenta nenhum sinal.",
+            "priority": "high",
+            "category_id": category_id,
+            "send_email_copy": True,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert response.status_code == 201
+
+    ticket = response.json()
+
+    assert len(sent_emails) == 1
+
+    email_data = sent_emails[0]
+
+    assert email_data["recipient_email"] == "cliente@example.com"
+    assert email_data["recipient_name"] == "Cliente Teste"
+    assert email_data["ticket_number"] == ticket["creator_ticket_number"]
+    assert email_data["title"] == "Computador não liga"
+    assert email_data["priority"] == "high"
+    assert email_data["category_name"] == "Hardware"
+
+
+def test_ticket_email_copy_is_not_sent_by_default(client, db, monkeypatch):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert category_response.status_code == 201
+
+    category_id = category_response.json()["id"]
+
+    sent_emails = []
+
+    def fake_send_ticket_created_copy(self, **kwargs):
+        sent_emails.append(kwargs)
+
+    monkeypatch.setattr(
+        "app.api.routes.tickets.EmailService.send_ticket_created_copy",
+        fake_send_ticket_created_copy,
+    )
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    response = client.post(
+        "/tickets",
+        json={
+            "title": "Computador não liga",
+            "description": "O computador não apresenta nenhum sinal.",
+            "priority": "high",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert response.status_code == 201
+    assert sent_emails == []
+
+
+def test_admin_can_delete_ticket_with_related_data(client, db):
+    customer_response = client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Chamado para exclusão",
+            "description": "Este chamado será removido pelo administrador.",
+            "priority": "medium",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert ticket_response.status_code == 201
+
+    ticket_id = ticket_response.json()["id"]
+    customer_id = customer_response.json()["id"]
+
+    comment = Comment(
+        ticket_id=ticket_id,
+        author_id=customer_id,
+        content="Comentário de teste.",
+    )
+
+    db.add(comment)
+    db.commit()
+
+    assert (
+        db.query(TicketHistory).filter(TicketHistory.ticket_id == ticket_id).count()
+        >= 1
+    )
+
+    assert db.query(Comment).filter(Comment.ticket_id == ticket_id).count() == 1
+
+    response = client.delete(
+        f"/tickets/{ticket_id}",
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert response.status_code == 204
+    assert db.get(Ticket, ticket_id) is None
+
+    assert db.query(Comment).filter(Comment.ticket_id == ticket_id).count() == 0
+
+    assert (
+        db.query(TicketHistory).filter(TicketHistory.ticket_id == ticket_id).count()
+        == 0
+    )
+
+
+def test_customer_cannot_delete_ticket(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Chamado protegido",
+            "description": "Cliente não deve conseguir excluir este chamado.",
+            "priority": "medium",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    ticket_id = ticket_response.json()["id"]
+
+    response = client.delete(
+        f"/tickets/{ticket_id}",
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    assert response.status_code == 403
+    assert db.get(Ticket, ticket_id) is not None
+
+
+def test_customer_ticket_number_is_scoped_to_creator(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Um",
+            "email": "cliente1@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Dois",
+            "email": "cliente2@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    assert admin is not None
+
+    admin.role = UserRole.ADMIN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_one_token = login_user(
+        client,
+        "cliente1@example.com",
+    )
+
+    customer_two_token = login_user(
+        client,
+        "cliente2@example.com",
+    )
+
+    first_response = client.post(
+        "/tickets",
+        json={
+            "title": "Chamado do cliente um",
+            "description": "Descrição do chamado do primeiro cliente.",
+            "priority": "medium",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_one_token}",
+        },
+    )
+
+    second_response = client.post(
+        "/tickets",
+        json={
+            "title": "Chamado do cliente dois",
+            "description": "Descrição do chamado do segundo cliente.",
+            "priority": "medium",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_two_token}",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    first_ticket = first_response.json()
+    second_ticket = second_response.json()
+
+    assert first_ticket["creator_ticket_number"] == 1
+    assert second_ticket["creator_ticket_number"] == 1
+    assert first_ticket["id"] != second_ticket["id"]
+
+    first_lookup = client.get(
+        "/tickets/my/1",
+        headers={
+            "Authorization": f"Bearer {customer_one_token}",
+        },
+    )
+
+    second_lookup = client.get(
+        "/tickets/my/1",
+        headers={
+            "Authorization": f"Bearer {customer_two_token}",
+        },
+    )
+
+    assert first_lookup.status_code == 200
+    assert second_lookup.status_code == 200
+
+    assert first_lookup.json()["id"] == first_ticket["id"]
+    assert second_lookup.json()["id"] == second_ticket["id"]
+
+
+def test_get_my_ticket_returns_404_for_unknown_number(client):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    token = login_user(client, "cliente@example.com")
+
+    response = client.get(
+        "/tickets/my/999",
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Ticket not found"}

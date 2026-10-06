@@ -24,6 +24,7 @@ class TicketCreate(BaseModel):
     description: str = Field(min_length=10)
     priority: TicketPriority = TicketPriority.MEDIUM
     category_id: int = Field(gt=0)
+    send_email_copy: bool = False
 
 
 class TicketStatusUpdate(BaseModel):
@@ -32,6 +33,7 @@ class TicketStatusUpdate(BaseModel):
 
 class TicketResponse(BaseModel):
     id: int
+    creator_ticket_number: int
     title: str
     description: str
     priority: TicketPriority
