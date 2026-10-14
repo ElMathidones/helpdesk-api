@@ -103,12 +103,8 @@ class TicketService:
         if ticket.assignee_id is not None:
             raise ValueError("Ticket is already assigned")
 
-        if ticket.status in {
-            TicketStatus.RESOLVED,
-            TicketStatus.CLOSED,
-            TicketStatus.CANCELED,
-        }:
-            raise ValueError("Ticket cannot be assigned in its current status")
+        if ticket.status != TicketStatus.UNDER_REVIEW:
+            raise ValueError("Ticket must be under review before assignment")
 
         old_status = ticket.status
 
@@ -153,11 +149,9 @@ class TicketService:
         allowed_transitions = {
             TicketStatus.OPEN: {
                 TicketStatus.UNDER_REVIEW,
-                TicketStatus.IN_PROGRESS,
                 TicketStatus.CANCELED,
             },
             TicketStatus.UNDER_REVIEW: {
-                TicketStatus.IN_PROGRESS,
                 TicketStatus.CANCELED,
             },
             TicketStatus.IN_PROGRESS: {
@@ -171,6 +165,24 @@ class TicketService:
             TicketStatus.CLOSED: set(),
             TicketStatus.CANCELED: set(),
         }
+
+        technician_can_start_analysis = (
+            current_user.role == UserRole.TECHNICIAN
+            and ticket.status == TicketStatus.OPEN
+            and new_status == TicketStatus.UNDER_REVIEW
+        )
+
+        technician_owns_ticket = (
+            current_user.role == UserRole.TECHNICIAN
+            and ticket.assignee_id == current_user.id
+        )
+
+        if (
+            current_user.role == UserRole.TECHNICIAN
+            and not technician_can_start_analysis
+            and not technician_owns_ticket
+        ):
+            raise PermissionError("Only the assigned technician can update this ticket")
 
         if new_status not in allowed_transitions[ticket.status]:
             raise ValueError(
@@ -191,6 +203,56 @@ class TicketService:
             event_type="status_changed",
             old_value=old_status.value,
             new_value=new_status.value,
+        )
+
+        self.db.commit()
+        self.db.refresh(ticket)
+
+        return ticket
+
+    def release_ticket(
+        self,
+        ticket_id: int,
+        current_user: User,
+    ) -> Ticket:
+        ticket = self.ticket_repository.get_by_id(ticket_id)
+
+        if ticket is None:
+            raise ValueError("Ticket not found")
+
+        if ticket.status != TicketStatus.IN_PROGRESS:
+            raise ValueError("Only tickets in progress can be released")
+
+        if ticket.assignee_id is None:
+            raise ValueError("Ticket is not assigned")
+
+        if (
+            current_user.role == UserRole.TECHNICIAN
+            and ticket.assignee_id != current_user.id
+        ):
+            raise PermissionError(
+                "Only the assigned technician can release this ticket"
+            )
+
+        old_assignee_id = ticket.assignee_id
+        old_status = ticket.status
+
+        ticket = self.ticket_repository.release(ticket)
+
+        self.history_service.create_event(
+            ticket_id=ticket.id,
+            user_id=current_user.id,
+            event_type="assignee_changed",
+            old_value=str(old_assignee_id),
+            new_value=None,
+        )
+
+        self.history_service.create_event(
+            ticket_id=ticket.id,
+            user_id=current_user.id,
+            event_type="status_changed",
+            old_value=old_status.value,
+            new_value=ticket.status.value,
         )
 
         self.db.commit()

@@ -203,6 +203,39 @@ def assign_ticket(
 
 
 @router.patch(
+    "/{ticket_id}/release",
+    response_model=TicketResponse,
+)
+def release_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.TECHNICIAN,
+        )
+    ),
+) -> TicketResponse:
+    service = TicketService(db)
+
+    try:
+        return service.release_ticket(
+            ticket_id=ticket_id,
+            current_user=current_user,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.patch(
     "/{ticket_id}/status",
     response_model=TicketResponse,
 )
@@ -225,6 +258,11 @@ def update_ticket_status(
             new_status=data.status,
             current_user=current_user,
         )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

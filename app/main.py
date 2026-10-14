@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
+from app.api.routes.assistant import router as assistant_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.categories import router as categories_router
 from app.api.routes.comments import router as comments_router
@@ -56,6 +57,7 @@ async def add_security_headers(
     return response
 
 
+app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(categories_router)

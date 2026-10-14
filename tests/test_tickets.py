@@ -315,6 +315,19 @@ def test_admin_can_assign_ticket(client, db):
 
     ticket_id = ticket_response.json()["id"]
 
+    analysis_response = client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "under_review",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert analysis_response.status_code == 200
+    assert analysis_response.json()["status"] == "under_review"
+
     response = client.patch(
         f"/tickets/{ticket_id}/assign",
         headers={
@@ -340,19 +353,24 @@ def test_admin_can_assign_ticket(client, db):
 
     history = history_response.json()
 
-    assert len(history) == 3
+    assert len(history) == 4
 
     assert history[0]["event_type"] == "ticket_created"
 
-    assert history[1]["event_type"] == "assignee_changed"
-    assert history[1]["old_value"] is None
-    assert history[1]["new_value"] == str(admin.id)
+    assert history[1]["event_type"] == "status_changed"
+    assert history[1]["old_value"] == "open"
+    assert history[1]["new_value"] == "under_review"
     assert history[1]["user"]["name"] == "Admin Teste"
 
-    assert history[2]["event_type"] == "status_changed"
-    assert history[2]["old_value"] == "open"
-    assert history[2]["new_value"] == "in_progress"
+    assert history[2]["event_type"] == "assignee_changed"
+    assert history[2]["old_value"] is None
+    assert history[2]["new_value"] == str(admin.id)
     assert history[2]["user"]["name"] == "Admin Teste"
+
+    assert history[3]["event_type"] == "status_changed"
+    assert history[3]["old_value"] == "under_review"
+    assert history[3]["new_value"] == "in_progress"
+    assert history[3]["user"]["name"] == "Admin Teste"
 
 
 def test_ticket_assignment_email_is_sent_to_assignee(
@@ -457,6 +475,19 @@ def test_ticket_assignment_email_is_sent_to_assignee(
         client,
         "tecnico@example.com",
     )
+
+    analysis_response = client.patch(
+        f"/tickets/{ticket['id']}/status",
+        json={
+            "status": "under_review",
+        },
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    assert analysis_response.status_code == 200
+    assert analysis_response.json()["status"] == "under_review"
 
     response = client.patch(
         f"/tickets/{ticket['id']}/assign",
@@ -620,6 +651,19 @@ def test_ticket_status_workflow(client, db):
 
     ticket_id = ticket_response.json()["id"]
 
+    analysis_response = client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "under_review",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert analysis_response.status_code == 200
+    assert analysis_response.json()["status"] == "under_review"
+
     assign_response = client.patch(
         f"/tickets/{ticket_id}/assign",
         headers={
@@ -669,17 +713,17 @@ def test_ticket_status_workflow(client, db):
 
     history = history_response.json()
 
-    assert len(history) == 5
-
-    assert history[3]["event_type"] == "status_changed"
-    assert history[3]["old_value"] == "in_progress"
-    assert history[3]["new_value"] == "resolved"
-    assert history[3]["user"]["name"] == "Admin Teste"
+    assert len(history) == 6
 
     assert history[4]["event_type"] == "status_changed"
-    assert history[4]["old_value"] == "resolved"
-    assert history[4]["new_value"] == "closed"
+    assert history[4]["old_value"] == "in_progress"
+    assert history[4]["new_value"] == "resolved"
     assert history[4]["user"]["name"] == "Admin Teste"
+
+    assert history[5]["event_type"] == "status_changed"
+    assert history[5]["old_value"] == "resolved"
+    assert history[5]["new_value"] == "closed"
+    assert history[5]["user"]["name"] == "Admin Teste"
 
     reopen_response = client.patch(
         f"/tickets/{ticket_id}/status",
@@ -1530,3 +1574,367 @@ def test_get_my_ticket_returns_404_for_unknown_number(client):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Ticket not found"}
+
+
+def test_assigned_technician_can_release_ticket(client, db):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Técnico Teste",
+            "email": "tecnico@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    technician = db.query(User).filter(User.email == "tecnico@example.com").first()
+
+    assert admin is not None
+    assert technician is not None
+
+    admin.role = UserRole.ADMIN
+    technician.role = UserRole.TECHNICIAN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+    technician_token = login_user(client, "tecnico@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Problema no computador",
+            "description": "Computador com falha.",
+            "priority": "medium",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    ticket_id = ticket_response.json()["id"]
+
+    analysis_response = client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "under_review",
+        },
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    assert analysis_response.status_code == 200
+
+    assign_response = client.patch(
+        f"/tickets/{ticket_id}/assign",
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    assert assign_response.status_code == 200
+    assert assign_response.json()["status"] == "in_progress"
+    assert assign_response.json()["assignee_id"] == technician.id
+
+    release_response = client.patch(
+        f"/tickets/{ticket_id}/release",
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    assert release_response.status_code == 200
+    assert release_response.json()["status"] == "open"
+    assert release_response.json()["assignee_id"] is None
+
+    history_response = client.get(
+        f"/tickets/{ticket_id}/history",
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    history = history_response.json()
+
+    assert history[-2]["event_type"] == "assignee_changed"
+    assert history[-2]["old_value"] == str(technician.id)
+    assert history[-2]["new_value"] is None
+
+    assert history[-1]["event_type"] == "status_changed"
+    assert history[-1]["old_value"] == "in_progress"
+    assert history[-1]["new_value"] == "open"
+
+
+def test_technician_cannot_update_another_technicians_ticket(
+    client,
+    db,
+):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Técnico Um",
+            "email": "tecnico1@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Técnico Dois",
+            "email": "tecnico2@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    technician_one = db.query(User).filter(User.email == "tecnico1@example.com").first()
+
+    technician_two = db.query(User).filter(User.email == "tecnico2@example.com").first()
+
+    assert admin is not None
+    assert technician_one is not None
+    assert technician_two is not None
+
+    admin.role = UserRole.ADMIN
+    technician_one.role = UserRole.TECHNICIAN
+    technician_two.role = UserRole.TECHNICIAN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+    technician_one_token = login_user(
+        client,
+        "tecnico1@example.com",
+    )
+    technician_two_token = login_user(
+        client,
+        "tecnico2@example.com",
+    )
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Chamado do técnico um",
+            "description": "Teste de responsabilidade.",
+            "priority": "high",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    ticket_id = ticket_response.json()["id"]
+
+    client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "under_review",
+        },
+        headers={
+            "Authorization": f"Bearer {technician_one_token}",
+        },
+    )
+
+    assign_response = client.patch(
+        f"/tickets/{ticket_id}/assign",
+        headers={
+            "Authorization": f"Bearer {technician_one_token}",
+        },
+    )
+
+    assert assign_response.status_code == 200
+
+    response = client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "resolved",
+        },
+        headers={
+            "Authorization": f"Bearer {technician_two_token}",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Only the assigned technician can update this ticket"
+    }
+
+
+def test_admin_can_update_ticket_assigned_to_technician(
+    client,
+    db,
+):
+    client.post(
+        "/users",
+        json={
+            "name": "Cliente Teste",
+            "email": "cliente@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Admin Teste",
+            "email": "admin@example.com",
+            "password": "senha123",
+        },
+    )
+
+    client.post(
+        "/users",
+        json={
+            "name": "Técnico Teste",
+            "email": "tecnico@example.com",
+            "password": "senha123",
+        },
+    )
+
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+
+    technician = db.query(User).filter(User.email == "tecnico@example.com").first()
+
+    assert admin is not None
+    assert technician is not None
+
+    admin.role = UserRole.ADMIN
+    technician.role = UserRole.TECHNICIAN
+    db.commit()
+
+    admin_token = login_user(client, "admin@example.com")
+    technician_token = login_user(client, "tecnico@example.com")
+
+    category_response = client.post(
+        "/categories",
+        json={
+            "name": "Hardware",
+            "description": "Problemas de hardware",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    category_id = category_response.json()["id"]
+
+    customer_token = login_user(client, "cliente@example.com")
+
+    ticket_response = client.post(
+        "/tickets",
+        json={
+            "title": "Chamado supervisionado",
+            "description": "Teste de intervenção administrativa.",
+            "priority": "high",
+            "category_id": category_id,
+        },
+        headers={
+            "Authorization": f"Bearer {customer_token}",
+        },
+    )
+
+    ticket_id = ticket_response.json()["id"]
+
+    client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "under_review",
+        },
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    assign_response = client.patch(
+        f"/tickets/{ticket_id}/assign",
+        headers={
+            "Authorization": f"Bearer {technician_token}",
+        },
+    )
+
+    assert assign_response.status_code == 200
+    assert assign_response.json()["assignee_id"] == technician.id
+
+    response = client.patch(
+        f"/tickets/{ticket_id}/status",
+        json={
+            "status": "resolved",
+        },
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "resolved"
+    assert response.json()["assignee_id"] == technician.id

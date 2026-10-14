@@ -99,6 +99,18 @@ class TicketRepository:
 
         return ticket
 
+    def release(
+        self,
+        ticket: Ticket,
+    ) -> Ticket:
+        ticket.assignee_id = None
+        ticket.status = TicketStatus.OPEN
+
+        self.db.flush()
+        self.db.refresh(ticket)
+
+        return ticket
+
     def update_status(
         self,
         ticket: Ticket,
