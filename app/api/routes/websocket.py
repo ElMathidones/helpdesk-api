@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
@@ -17,21 +19,51 @@ async def ticket_websocket(
     websocket: WebSocket,
     ticket_id: int,
 ) -> None:
-    token = websocket.query_params.get("token")
+    origin = websocket.headers.get("origin")
 
-    if not token:
+    allowed_origins = {
+        item.strip() for item in settings.cors_origins.split(",") if item.strip()
+    }
+
+    if origin is not None and origin not in allowed_origins:
         await websocket.close(code=1008)
         return
+
+    await websocket.accept()
 
     db: Session = SessionLocal()
 
     try:
         try:
+            auth_message = await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=5,
+            )
+
+            if not isinstance(auth_message, dict):
+                await websocket.close(code=1008)
+                return
+
+            if auth_message.get("type") != "auth":
+                await websocket.close(code=1008)
+                return
+
+            token = auth_message.get("token")
+
+            if not isinstance(token, str) or not token:
+                await websocket.close(code=1008)
+                return
+
             current_user = get_user_from_token(
                 token=token,
                 db=db,
             )
-        except ValueError, PermissionError:
+        except (
+            TimeoutError,
+            ValueError,
+            PermissionError,
+            WebSocketDisconnect,
+        ):
             await websocket.close(code=1008)
             return
 
@@ -46,7 +78,10 @@ async def ticket_websocket(
             await websocket.close(code=1008)
             return
 
-        await manager.connect(ticket_id, websocket)
+        manager.connect(
+            ticket_id,
+            websocket,
+        )
 
         try:
             while True:
@@ -60,7 +95,10 @@ async def ticket_websocket(
                     },
                 )
         except WebSocketDisconnect:
-            manager.disconnect(ticket_id, websocket)
+            manager.disconnect(
+                ticket_id,
+                websocket,
+            )
 
     finally:
         db.close()

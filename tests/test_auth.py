@@ -96,3 +96,88 @@ def test_protected_route_without_token(client):
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_login_rate_limit_blocks_after_five_failed_attempts(client):
+    client.post(
+        "/users",
+        json={
+            "name": "Usuário Rate Limit",
+            "email": "ratelimit@example.com",
+            "password": "senha123",
+        },
+    )
+
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            data={
+                "username": "ratelimit@example.com",
+                "password": "senha_errada",
+            },
+        )
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Invalid email or password"}
+
+    blocked_response = client.post(
+        "/auth/login",
+        data={
+            "username": "ratelimit@example.com",
+            "password": "senha_errada",
+        },
+    )
+
+    assert blocked_response.status_code == 429
+    assert blocked_response.json() == {
+        "detail": "Too many login attempts. Try again later."
+    }
+
+    assert "Retry-After" in blocked_response.headers
+
+    retry_after = int(blocked_response.headers["Retry-After"])
+
+    assert 1 <= retry_after <= 300
+
+
+def test_successful_login_resets_failed_attempts(client):
+    client.post(
+        "/users",
+        json={
+            "name": "Usuário Reset",
+            "email": "reset@example.com",
+            "password": "senha123",
+        },
+    )
+
+    for _ in range(4):
+        response = client.post(
+            "/auth/login",
+            data={
+                "username": "reset@example.com",
+                "password": "senha_errada",
+            },
+        )
+
+        assert response.status_code == 401
+
+    successful_response = client.post(
+        "/auth/login",
+        data={
+            "username": "reset@example.com",
+            "password": "senha123",
+        },
+    )
+
+    assert successful_response.status_code == 200
+
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            data={
+                "username": "reset@example.com",
+                "password": "senha_errada",
+            },
+        )
+
+        assert response.status_code == 401
