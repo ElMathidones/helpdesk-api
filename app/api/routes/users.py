@@ -14,7 +14,15 @@ from sqlalchemy.orm import Session
 from app.dependencies.auth import get_current_user
 from app.dependencies.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import (
+    EmailChangeConfirm,
+    EmailChangeStatus,
+    UserCreate,
+    UserEmailUpdate,
+    UserResponse,
+    UserUpdate,
+)
+from app.services.email import EmailDeliveryError, EmailService
 from app.services.user import (
     AVATAR_DIRECTORY,
     MAX_AVATAR_SIZE,
@@ -70,6 +78,105 @@ def update_current_user(
 ) -> UserResponse:
     service = UserService(db)
     return service.update_user(current_user, data)
+
+
+@router.patch(
+    "/me/email",
+    response_model=EmailChangeStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def update_current_user_email(
+    data: UserEmailUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EmailChangeStatus:
+    service = UserService(db)
+
+    try:
+        token, new_email = service.request_email_change(
+            current_user,
+            data,
+        )
+
+    except PermissionError as exc:
+        message = str(exc)
+
+        if message == "Email change temporarily locked":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=message,
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Incorrect current password",
+        ) from exc
+
+    except ValueError as exc:
+        message = str(exc)
+
+        if message == "Email already registered":
+            code = status.HTTP_409_CONFLICT
+
+        elif message == "Please wait before requesting again":
+            code = status.HTTP_429_TOO_MANY_REQUESTS
+
+        else:
+            code = status.HTTP_400_BAD_REQUEST
+
+        raise HTTPException(
+            status_code=code,
+            detail=message,
+        ) from exc
+
+    try:
+        EmailService().send_email_change_confirmation(
+            recipient_email=new_email,
+            recipient_name=current_user.name,
+            token=token,
+        )
+
+    except EmailDeliveryError as exc:
+        service.cancel_email_change_request(token)
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to send confirmation email",
+        ) from exc
+
+    return EmailChangeStatus(
+        message="Confirmation email sent",
+    )
+
+
+@router.post(
+    "/confirm-email",
+    response_model=EmailChangeStatus,
+)
+def confirm_user_email_change(
+    data: EmailChangeConfirm,
+    db: Session = Depends(get_db),
+) -> EmailChangeStatus:
+    service = UserService(db)
+
+    try:
+        service.confirm_email_change(data.token)
+
+    except ValueError as exc:
+        if str(exc) == "Email already registered":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired confirmation token",
+        ) from exc
+
+    return EmailChangeStatus(
+        message="Email updated successfully",
+    )
 
 
 @router.post(

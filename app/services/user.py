@@ -1,12 +1,16 @@
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
+from secrets import token_urlsafe
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password
+from app.core.config import get_settings
+from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.repositories.user import UserRepository
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserEmailUpdate, UserUpdate
 
 AVATAR_DIRECTORY = Path(__file__).resolve().parents[2] / "uploads" / "avatars"
 
@@ -63,6 +67,104 @@ class UserService:
         return self.repository.update(
             user,
             name=data.name,
+        )
+
+    def update_email(
+        self,
+        user: User,
+        data: UserEmailUpdate,
+    ) -> User:
+        if not verify_password(
+            data.current_password,
+            user.password_hash,
+        ):
+            raise PermissionError("Incorrect current password")
+
+        new_email = str(data.email).strip().lower()
+
+        if new_email == user.email.lower():
+            return user
+
+        existing_user = self.repository.get_by_email(new_email)
+
+        if existing_user is not None and existing_user.id != user.id:
+            raise ValueError("Email already registered")
+
+        return self.repository.update_email(
+            user,
+            email=new_email,
+        )
+
+    def request_email_change(
+        self,
+        user: User,
+        data: UserEmailUpdate,
+    ) -> tuple[str, str]:
+        settings = get_settings()
+        now = datetime.now(UTC)
+
+        password_valid = verify_password(
+            data.current_password,
+            user.password_hash,
+        )
+
+        self.repository.check_email_change_password(
+            user,
+            password_valid=password_valid,
+            now=now,
+            max_attempts=settings.email_change_max_password_attempts,
+            lock_minutes=settings.email_change_lock_minutes,
+        )
+
+        new_email = str(data.email).strip().lower()
+
+        if new_email == user.email.lower():
+            raise ValueError("New email must be different")
+
+        existing_user = self.repository.get_by_email(new_email)
+
+        if existing_user is not None and existing_user.id != user.id:
+            raise ValueError("Email already registered")
+
+        token = token_urlsafe(32)
+
+        token_hash = sha256(token.encode("utf-8")).hexdigest()
+
+        expires_at = now + timedelta(minutes=settings.email_change_token_expire_minutes)
+
+        self.repository.stage_email_change(
+            user,
+            pending_email=new_email,
+            token_hash=token_hash,
+            requested_at=now,
+            expires_at=expires_at,
+            cooldown_seconds=settings.email_change_cooldown_seconds,
+        )
+
+        return token, new_email
+
+    def confirm_email_change(
+        self,
+        token: str,
+    ) -> User:
+        if not token or len(token) > 256:
+            raise ValueError("Invalid or expired confirmation token")
+
+        token_hash = sha256(token.encode("utf-8")).hexdigest()
+
+        return self.repository.confirm_email_change(
+            token_hash=token_hash,
+            now=datetime.now(UTC),
+        )
+
+    def cancel_email_change_request(
+        self,
+        token: str,
+    ) -> None:
+        token_hash = sha256(token.encode("utf-8")).hexdigest()
+
+        self.repository.cancel_email_change_request(
+            token_hash=token_hash,
         )
 
     def update_avatar(

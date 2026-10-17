@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     resend_api_key: str | None = None
     email_from: str = "Help Desk <onboarding@resend.dev>"
+    frontend_url: str = "http://localhost:5173"
+    email_change_token_expire_minutes: int = 30
+    email_change_cooldown_seconds: int = 60
+    email_change_max_password_attempts: int = 5
+    email_change_lock_minutes: int = 15
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
 

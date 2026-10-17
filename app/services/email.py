@@ -1,5 +1,6 @@
 import logging
 from html import escape
+from urllib.parse import quote
 
 import resend
 
@@ -13,6 +14,10 @@ PRIORITY_LABELS = {
     "high": "Alta",
     "critical": "Crítica",
 }
+
+
+class EmailDeliveryError(Exception):
+    pass
 
 
 class EmailService:
@@ -138,3 +143,110 @@ class EmailService:
                 "Failed to send ticket assignment email for ticket %s",
                 ticket_id,
             )
+
+    def send_email_change_confirmation(
+        self,
+        *,
+        recipient_email: str,
+        recipient_name: str,
+        token: str,
+    ) -> None:
+        if not self.settings.resend_api_key:
+            raise EmailDeliveryError("Email service is not configured")
+
+        resend.api_key = self.settings.resend_api_key
+
+        confirmation_url = (
+            f"{self.settings.frontend_url.rstrip('/')}"
+            f"/confirm-email?token={quote(token, safe='')}"
+        )
+
+        safe_name = escape(recipient_name)
+        safe_url = escape(confirmation_url, quote=True)
+
+        expires_minutes = self.settings.email_change_token_expire_minutes
+
+        html = f"""
+        <div style="
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 560px;
+            margin: 0 auto;
+            color: #1f2937;
+        ">
+            <h2>Confirme seu novo e-mail</h2>
+
+            <p>Olá, <strong>{safe_name}</strong>.</p>
+
+            <p>
+                Recebemos uma solicitação para alterar
+                o endereço de e-mail da sua conta Helpdesk.
+            </p>
+
+            <p>
+                Para confirmar a alteração,
+                clique no botão abaixo:
+            </p>
+
+            <p style="margin: 28px 0;">
+                <a
+                    href="{safe_url}"
+                    style="
+                        display: inline-block;
+                        padding: 12px 20px;
+                        border-radius: 8px;
+                        background: #4f46e5;
+                        color: #ffffff;
+                        text-decoration: none;
+                        font-weight: 600;
+                    "
+                >
+                    Confirmar novo e-mail
+                </a>
+            </p>
+
+            <p>
+                Este link é válido por
+                <strong>{expires_minutes} minutos</strong>
+                e só pode ser utilizado uma vez.
+            </p>
+
+            <p>
+                Se você não solicitou esta alteração,
+                ignore esta mensagem.
+                Seu endereço atual permanecerá válido.
+            </p>
+
+            <hr style="
+                border: 0;
+                border-top: 1px solid #e5e7eb;
+                margin: 24px 0;
+            ">
+
+            <p style="font-size: 12px; color: #6b7280;">
+                Se o botão não funcionar,
+                copie este endereço no navegador:
+            </p>
+
+            <p style="
+                font-size: 12px;
+                overflow-wrap: anywhere;
+            ">
+                {safe_url}
+            </p>
+        </div>
+        """
+
+        try:
+            resend.Emails.send(
+                {
+                    "from": self.settings.email_from,
+                    "to": [recipient_email],
+                    "subject": "Confirme a alteração de e-mail - Helpdesk",
+                    "html": html,
+                }
+            )
+        except Exception as exc:
+            logger.error("Failed to send email change confirmation")
+
+            raise EmailDeliveryError("Unable to send confirmation email") from exc

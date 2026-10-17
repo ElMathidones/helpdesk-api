@@ -13,6 +13,19 @@ class UserUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
 
 
+class UserEmailUpdate(BaseModel):
+    email: EmailStr
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class EmailChangeConfirm(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+
+
+class EmailChangeStatus(BaseModel):
+    message: str
+
+
 class UserResponse(BaseModel):
     id: int
     name: str

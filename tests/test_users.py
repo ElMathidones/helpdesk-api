@@ -3,6 +3,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.security import hash_password
+from app.repositories.user import UserRepository
+from app.services.email import EmailService
+
 
 def login_user(
     client: TestClient,
@@ -277,3 +281,216 @@ def test_avatar_rejects_content_that_does_not_match_file_type(
     }
 
     assert list(tmp_path.iterdir()) == []
+
+
+def create_authenticated_user(client):
+    response = client.post(
+        "/users",
+        json={
+            "name": "Usuário Teste",
+            "email": "original@example.com",
+            "password": "senha123",
+        },
+    )
+
+    assert response.status_code == 201
+
+    login = client.post(
+        "/auth/login",
+        data={
+            "username": "original@example.com",
+            "password": "senha123",
+        },
+    )
+
+    assert login.status_code == 200
+
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def test_user_can_change_email(client, monkeypatch):
+    headers = create_authenticated_user(client)
+    sent = {}
+
+    def fake_send(
+        self,
+        *,
+        recipient_email,
+        recipient_name,
+        token,
+    ):
+        sent["email"] = recipient_email
+        sent["token"] = token
+
+    monkeypatch.setattr(
+        EmailService,
+        "send_email_change_confirmation",
+        fake_send,
+    )
+
+    response = client.patch(
+        "/users/me/email",
+        headers=headers,
+        json={
+            "email": "novo@example.com",
+            "current_password": "senha123",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["message"] == "Confirmation email sent"
+
+    assert sent["email"] == "novo@example.com"
+
+    current_user = client.get(
+        "/users/me",
+        headers=headers,
+    )
+
+    assert current_user.status_code == 200
+    assert current_user.json()["email"] == "original@example.com"
+
+    confirmation = client.post(
+        "/users/confirm-email",
+        json={"token": sent["token"]},
+    )
+
+    assert confirmation.status_code == 200
+    assert confirmation.json()["message"] == "Email updated successfully"
+
+    updated_user = client.get(
+        "/users/me",
+        headers=headers,
+    )
+
+    assert updated_user.status_code == 200
+    assert updated_user.json()["email"] == "novo@example.com"
+
+    old_login = client.post(
+        "/auth/login",
+        data={
+            "username": "original@example.com",
+            "password": "senha123",
+        },
+    )
+
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/auth/login",
+        data={
+            "username": "novo@example.com",
+            "password": "senha123",
+        },
+    )
+
+    assert new_login.status_code == 200
+
+    repeated = client.post(
+        "/users/confirm-email",
+        json={"token": sent["token"]},
+    )
+
+    assert repeated.status_code == 400
+
+
+def test_cannot_change_email_with_wrong_password(client):
+    headers = create_authenticated_user(client)
+
+    response = client.patch(
+        "/users/me/email",
+        headers=headers,
+        json={
+            "email": "novo@example.com",
+            "current_password": "senha_errada",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Incorrect current password"
+
+    current_user = client.get("/users/me", headers=headers)
+    assert current_user.json()["email"] == "original@example.com"
+
+
+def test_cannot_change_email_to_existing_email(client):
+    headers = create_authenticated_user(client)
+
+    client.post(
+        "/users",
+        json={
+            "name": "Outro Usuário",
+            "email": "ocupado@example.com",
+            "password": "senha123",
+        },
+    )
+
+    response = client.patch(
+        "/users/me/email",
+        headers=headers,
+        json={
+            "email": "OCUPADO@example.com",
+            "current_password": "senha123",
+        },
+    )
+
+    assert response.status_code == 409
+
+    current_user = client.get("/users/me", headers=headers)
+    assert current_user.json()["email"] == "original@example.com"
+
+
+def test_cannot_change_email_to_invalid_address(client):
+    headers = create_authenticated_user(client)
+
+    response = client.patch(
+        "/users/me/email",
+        headers=headers,
+        json={
+            "email": "email-invalido",
+            "current_password": "senha123",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_cannot_change_email_without_authentication(client):
+    response = client.patch(
+        "/users/me/email",
+        json={
+            "email": "novo@example.com",
+            "current_password": "senha123",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_repository_handles_duplicate_email(db):
+    repository = UserRepository(db)
+
+    first_user = repository.create(
+        name="Primeiro Usuário",
+        email="duplicado@example.com",
+        password_hash=hash_password("senha123"),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Email already registered",
+    ):
+        repository.create(
+            name="Segundo Usuário",
+            email="duplicado@example.com",
+            password_hash=hash_password("senha123"),
+        )
+
+    third_user = repository.create(
+        name="Terceiro Usuário",
+        email="terceiro@example.com",
+        password_hash=hash_password("senha123"),
+    )
+
+    assert first_user.id != third_user.id
+    assert repository.get_by_email("duplicado@example.com").id == first_user.id
